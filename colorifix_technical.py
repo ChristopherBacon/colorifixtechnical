@@ -1,7 +1,8 @@
 from typing import Union
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from neo4j import GraphDatabase
 import pandas as pd
+import re
 
 # PART 1 - DATA MODEL
 
@@ -164,14 +165,70 @@ driver.close()
 
 app = FastAPI()
 
+def is_valid_email(email):
+    # Regular expression pattern for validating email format
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    
+    # Check if the email matches the pattern
+    if re.match(pattern, email):
+        return True
+    else:
+        return False
 
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
+@app.post("/company")
+async def add_company(company_name: str):
+    if not company_name:
+        raise HTTPException(status_code=400, detail="No company name provided please try again.")
+    with driver.session() as session:
+        session.run("CREATE (:Company {name: $companyName})", companyName=company_name)
+    
+    return {"message": "Company added successfully"}
+
+@app.post("/permission_group")
+async def add_permission_group(permission_group: str, permission: str):
+    if not permission_group:
+        raise HTTPException(status_code=400, detail="No permission group provided please try again.")
+    if not permission:
+        raise HTTPException(status_code=400, detail="No permission provided please try again.")
+    with driver.session() as session:
+        session.run("""CREATE (p:PermissionGroup {permissionGroup: $permGroup})
+                        MATCH (p:PermissionGroup {permissionGroup: $permGroup})
+                        MATCH (a:Permission {permission: $permissionName})
+                        CREATE (p)-[:HAS_PERMISSION]->(a)""", permGroup=permission_group, permissionName=permission)
+
+@app.post("/user")
+async def add_user(user_email: str, company: str, permissionGroup:str):
+    email_bool = is_valid_email(user_email)
+    if email_bool == False:
+        raise HTTPException(status_code=400, detail="Invalid email please try again.")
+    
+    with driver.session() as session:
+        company_check_query = f"MATCH (c:Company) WHERE c.companyName = $company RETURN n LIMIT 1"
+        valid_company = session.run(company_check_query,company=company)
+        if not bool(valid_company):
+            raise HTTPException(status_code=400, detail="Invalid company please try again.")
+    
+    with driver.session() as session:
+        permission_group_check_query = f"MATCH (p:PermissionGroup) WHERE p.permissionGroup = $permissionGroup RETURN n LIMIT 1"
+        valid_permisison_group = session.run(permission_group_check_query, permissionGroup=permissionGroup)
+        if not bool(valid_permisison_group):
+            raise HTTPException(status_code=400, detail="Invalid permission group please try again.")
+    
+   
+    session.run("""CREATE (u:User {username: $user_name}))
+                       MATCH (u:User {username: $user_name})
+                       MATCH (a:PermissionGroup {permissionGroup: $permissionGroupName}))
+                       CREATE (u)-[:IN_PERMISSION_GROUP]->(p)
+                       MATCH (u:User {username: $userName})
+                       MATCH (c:Company {companyName: $company})
+                       CREATE (u)-[:WORKS_FOR]->(c)
+                    """,user_name=user_email, permissionGroupName=permissionGroup, company=company)
 
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: Union[str, None] = None):
-    return {"item_id": item_id, "q": q}
+
+
+
+
+
 
 
