@@ -1,5 +1,5 @@
 from typing import Union
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from neo4j import GraphDatabase
 import pandas as pd
 import re
@@ -54,10 +54,10 @@ with driver.session() as session:
 
 def build_data_model():
     with driver.session() as session:
-        # create User nodes
+        # create user nodes
         create_users_query = """
-            UNWIND $users AS user
-            MERGE (u:User {username: user.UserName})
+        UNWIND $users AS user
+        MERGE (u:User {username: user.UserName})
         """
         users = [
             {"UserName": "admin@my-company.com"},
@@ -65,10 +65,10 @@ def build_data_model():
         ]
         session.run(create_users_query, users=users)
 
-        #create company nodes
+        # create company nodes
         create_companies_query = """
-            UNWIND $companies AS company
-            MERGE (c:Company {companyName: company.CompanyName})
+        UNWIND $companies AS company
+        MERGE (c:Company {companyName: company.CompanyName})
         """
         companies = [
             {"CompanyName": "MyCompany"}
@@ -76,10 +76,10 @@ def build_data_model():
         session.run(create_companies_query, companies=companies)
 
 
-        # create Permission Group nodes
+        # create permission Group nodes
         create_permission_group_query = """
-            UNWIND $permissionGroups AS permission
-            MERGE (p:PermissionGroup {permissionGroup: permission.PermissionGroupDescription})
+        UNWIND $permissionGroups AS permission
+        MERGE (p:PermissionGroup {permissionGroup: permission.PermissionGroupDescription})
         """
         permissionGroups = [
             {"PermissionGroupDescription": "Admin"},
@@ -90,8 +90,8 @@ def build_data_model():
 
         # create permissions nodes
         create_permissions_query = """
-            UNWIND $permissions AS permission
-            MERGE (a:Permission {permission: permission.PermissionName})
+        UNWIND $permissions AS permission
+        MERGE (a:Permission {permission: permission.PermissionName})
         """
         permissions = [
             {"PermissionName": "Add Companies"},
@@ -105,11 +105,11 @@ def build_data_model():
         ]
         session.run(create_permissions_query, permissions=permissions)
 
-        # Create relationships between Permisison Group and Permission nodes
+        # create relationships between permisison group and permission nodes
         create_permission_relationships_query = """
-            MATCH (p:PermissionGroup {permissionGroup: $permissionGroupName})
-            MATCH (a:Permission {permission: $permissionName})
-            CREATE (p)-[:HAS_PERMISSION]->(a)
+        MATCH (p:PermissionGroup {permissionGroup: $permissionGroupName})
+        MATCH (a:Permission {permission: $permissionName})
+        CREATE (p)-[:HAS_PERMISSION]->(a)
         """
         permissions_relationships = [
             {"permissionGroupName": "Admin", "permissionName": "Add Companies"},
@@ -126,11 +126,11 @@ def build_data_model():
         for relationship in permissions_relationships:
             session.run(create_permission_relationships_query, **relationship)
 
-        # Create relationships between Users and Permission groups
+        # create relationships between users and permission groups
         create_user_permissions_query = """
-            MATCH (u:User {username: $userName})
-            MATCH (p:PermissionGroup {permissionGroup: $permissionGroupName})
-            CREATE (u)-[:IN_PERMISSION_GROUP]->(p)
+        MATCH (u:User {username: $userName})
+        MATCH (p:PermissionGroup {permissionGroup: $permissionGroupName})
+        CREATE (u)-[:IN_PERMISSION_GROUP]->(p)
         """
         users_relationships = [
             {"userName": "admin@my-company.com", "permissionGroupName": "Admin"},
@@ -140,11 +140,11 @@ def build_data_model():
             session.run(create_user_permissions_query, **relationship)
 
 
-        # Create relationships between Users and Permission groups
+        # create relationships between users and permission groups
         create_user_company_query = """
-            MATCH (u:User {username: $userName})
-            MATCH (c:Company {companyName: $company})
-            CREATE (u)-[:WORKS_FOR]->(c)
+        MATCH (u:User {username: $userName})
+        MATCH (c:Company {companyName: $company})
+        CREATE (u)-[:WORKS_FOR]->(c)
         """
         company_relationships = [
             {"userName": "admin@my-company.com", "company": "MyCompany"},
@@ -157,78 +157,11 @@ def build_data_model():
 # Call the import_data function
 build_data_model()
 
-# Close the Neo4j driver
-driver.close()
-
-
+# # Close the Neo4j driver
+# driver.close()
 
 # # PART 2 Create REST API
-
 app = FastAPI()
-
-def is_valid_email(email):
-    # Regular expression pattern for validating email format
-    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-    
-    # Check if the email matches the pattern
-    if re.match(pattern, email):
-        return True
-    else:
-        return False
-
-@app.post("/company")
-async def add_company(company_name: str):
-    if not company_name:
-        raise HTTPException(status_code=400, detail="No company name provided please try again.")
-    with driver.session() as session:
-        session.run("CREATE (:Company {name: $companyName})", companyName=company_name)
-    
-    return {"message": "Company added successfully"}
-
-@app.post("/permission_group")
-async def add_permission_group(permission_group: str, permission: str):
-    if not permission_group:
-        raise HTTPException(status_code=400, detail="No permission group provided please try again.")
-    if not permission:
-        raise HTTPException(status_code=400, detail="No permission provided please try again.")
-    with driver.session() as session:
-        session.run("""CREATE (p:PermissionGroup {permissionGroup: $permGroup})
-                        MATCH (p:PermissionGroup {permissionGroup: $permGroup})
-                        MATCH (a:Permission {permission: $permissionName})
-                        CREATE (p)-[:HAS_PERMISSION]->(a)""", permGroup=permission_group, permissionName=permission)
-
-@app.post("/user")
-async def add_user(user_email: str, company: str, permissionGroup:str):
-    email_bool = is_valid_email(user_email)
-    if email_bool == False:
-        raise HTTPException(status_code=400, detail="Invalid email please try again.")
-    
-    with driver.session() as session:
-        company_check_query = f"MATCH (c:Company) WHERE c.companyName = $company RETURN n LIMIT 1"
-        valid_company = session.run(company_check_query,company=company)
-        if not bool(valid_company):
-            raise HTTPException(status_code=400, detail="Invalid company please try again.")
-    
-    with driver.session() as session:
-        permission_group_check_query = f"MATCH (p:PermissionGroup) WHERE p.permissionGroup = $permissionGroup RETURN n LIMIT 1"
-        valid_permisison_group = session.run(permission_group_check_query, permissionGroup=permissionGroup)
-        if not bool(valid_permisison_group):
-            raise HTTPException(status_code=400, detail="Invalid permission group please try again.")
-    
-   
-    session.run("""CREATE (u:User {username: $user_name}))
-                       MATCH (u:User {username: $user_name})
-                       MATCH (a:PermissionGroup {permissionGroup: $permissionGroupName}))
-                       CREATE (u)-[:IN_PERMISSION_GROUP]->(p)
-                       MATCH (u:User {username: $userName})
-                       MATCH (c:Company {companyName: $company})
-                       CREATE (u)-[:WORKS_FOR]->(c)
-                    """,user_name=user_email, permissionGroupName=permissionGroup, company=company)
-
-# # PART 2 Create REST API
-
-app = FastAPI()
-
 
 
 @app.post("/company")
@@ -254,6 +187,8 @@ async def add_permission_group(permission_group: str, permission: str):
                         permGroup=permission_group, 
                         permissionName=permission
                     )
+        
+    return {"message": "Permission added to Permission Group Successfully"}
 
 @app.post("/user")
 async def add_user(user_email: str, company: str, permissionGroup:str):
@@ -289,6 +224,8 @@ async def add_user(user_email: str, company: str, permissionGroup:str):
         """
         session.run(create_user_query,user_name=user_email, permissionGroupName=permissionGroup, company=company)
 
+        return {"message": "New User created successfully"}
+
 @app.put("/user/{user_email}")
 async def update_user_permission(user_email:str, new_permission:str):
 
@@ -302,6 +239,7 @@ async def update_user_permission(user_email:str, new_permission:str):
             CREATE (u)-[:IN_PERMISSION_GROUP]->(p_new)
             """, user_email=user_email, new_permission=new_permission
         )
+        return {"message": "User permission group updated successfully"}
 
 @app.get("/users")
 async def get_users(skip: int = Query(0, ge=0), limit: int = Query(10, ge=1)):
