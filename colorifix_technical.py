@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from neo4j import GraphDatabase
 import pandas as pd
 import re
+import uvicorn
 
 # PART 1 - DATA MODEL
 
@@ -223,6 +224,105 @@ async def add_user(user_email: str, company: str, permissionGroup:str):
                        MATCH (c:Company {companyName: $company})
                        CREATE (u)-[:WORKS_FOR]->(c)
                     """,user_name=user_email, permissionGroupName=permissionGroup, company=company)
+
+# # PART 2 Create REST API
+
+app = FastAPI()
+
+
+
+@app.post("/company")
+async def add_company(company_name: str):
+    if not company_name:
+        raise HTTPException(status_code=400, detail="No company name provided please try again.")
+    with driver.session() as session:
+        session.run("CREATE (:Company {name: $companyName})", companyName=company_name)
+    
+    return {"message": f"Company: {company_name} added successfully"}
+
+@app.post("/permission_group")
+async def add_permission_group(permission_group: str, permission: str):
+    if not permission_group:
+        raise HTTPException(status_code=400, detail="No permission group provided please try again.")
+    if not permission:
+        raise HTTPException(status_code=400, detail="No permission provided please try again.")
+    with driver.session() as session:
+        session.run("""CREATE (p:PermissionGroup {permissionGroup: $permGroup})
+                        WITH p
+                        MATCH (a:Permission {permission: $permissionName})
+                        CREATE (p)-[:HAS_PERMISSION]->(a)""", 
+                        permGroup=permission_group, 
+                        permissionName=permission
+                    )
+
+@app.post("/user")
+async def add_user(user_email: str, company: str, permissionGroup:str):
+    email_bool = is_valid_email(user_email)
+    if not email_bool:
+        raise HTTPException(status_code=400, detail="Invalid email please try again.")
+    
+    with driver.session() as session:
+        company_check_query = """
+        MATCH (c:Company {companyName: $company})
+        RETURN c LIMIT 1
+        """
+        valid_company = session.run(company_check_query,company=company)
+        if not bool(valid_company):
+            raise HTTPException(status_code=400, detail="Invalid company please try again.")
+    
+        permission_group_check_query = """
+        MATCH (p:PermissionGroup {permissionGroup: $permissionGroup}) 
+        RETURN p LIMIT 1
+        """
+        valid_permisison_group = session.run(permission_group_check_query, permissionGroup=permissionGroup)
+        if not bool(valid_permisison_group):
+            raise HTTPException(status_code=400, detail="Invalid permission group please try again.")
+        
+        create_user_query = """
+        CREATE (u:User {username: $user_name})
+        WITH u
+        MATCH (a:PermissionGroup {permissionGroup: $permissionGroupName})
+        CREATE (u)-[:IN_PERMISSION_GROUP]->(p)
+        WITH u
+        MATCH (c:Company {companyName: $company})
+        CREATE (u)-[:WORKS_FOR]->(c)
+        """
+        session.run(create_user_query,user_name=user_email, permissionGroupName=permissionGroup, company=company)
+
+@app.put("/user/{user_email}")
+async def update_user_permission(user_email:str, new_permission:str):
+
+    with driver.session() as session:
+        result = session.run(
+            """
+            MATCH (u:User {username: $user_email})-[r:IN_PERMISSION_GROUP]->(p:PermissionGroup)
+            DELETE r
+            WITH u
+            MATCH (p_new:PermissionGroup {permissionGroup: $new_permission})
+            CREATE (u)-[:IN_PERMISSION_GROUP]->(p_new)
+            """, user_email=user_email, new_permission=new_permission
+        )
+
+@app.get("/users")
+async def get_users(skip: int = Query(0, ge=0), limit: int = Query(10, ge=1)):
+    with driver.session() as session:
+        query = """
+        MATCH (u:User)
+        RETURN u.username AS username
+        SKIP $skip LIMIT $limit
+        """
+        result = session.run(query, skip=skip, limit=limit)
+        users = [dict(record) for record in result]
+
+        return users
+
+
+# if __name__ == "__main__":
+uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+
+
 
 
 
