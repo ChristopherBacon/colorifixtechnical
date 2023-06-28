@@ -1,59 +1,19 @@
-from typing import Union
 from fastapi import FastAPI, HTTPException, Query
 from neo4j import GraphDatabase
-import pandas as pd
 import re
 import uvicorn
-import logging
 
 
-# PART 1 - DATA MODEL
-
-# clean the data
-
-#data = pd.read_csv('/Users/christopherbacon/Documents/projects/Colorifix/data.csv',sep='|')
-
-# def remove_redundant_cols(df):
-#     dropped_cols_df = df.drop(columns=['Unnamed: 0','Unnamed: 7'])
-#     return dropped_cols_df
-
-# def remove_redundant_rows(df):
-#     dropped_rows_df = df.drop(axis=0, index=0)
-#     return dropped_rows_df
-
-# def capitalise_words(entry):
-#     return entry.title()
-
-# def remove_second_word(entry):
-#     words = entry.split()
-#     if len(words) > 1:
-#         return words[0]
-
-# def remove_first_word(entry):
-#     words = entry.split()
-#     if len(words) >1:
-#         return words[1]
-    
-
-# # Not sure whether I need to do this yet
-# # data['PermissionNameDescription'] = data['PermissionNameDescription'].map(remove_second_word)
-# data_redundant_cols_removed = remove_redundant_cols(data)
-# data = data_redundant_cols_removed.applymap(capitalise_words)
-# print(data)
-
-
-
+# database access variables
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "password"
 
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
-
-with driver.session() as session:
-    # Delete all nodes and relationships
-    session.run("MATCH (n) DETACH DELETE n")
-
+# with driver.session() as session:
+#     # Delete all nodes and relationships
+#     session.run("MATCH (n) DETACH DELETE n")
 
 def is_valid_email(email):
     pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
@@ -163,12 +123,6 @@ def build_data_model():
         for relationship in company_relationships:
             session.run(create_user_company_query, **relationship)
 
-
-# Call the import_data function
-build_data_model()
-
-# # Close the Neo4j driver
-# driver.close()
 
  # PART 2 Create REST API
 
@@ -280,5 +234,7 @@ async def get_users(skip: int = Query(0, ge=0), limit: int = Query(10, ge=1)):
         return users
 
 
-# if __name__ == "__main__":
-uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == "__main__":
+    
+    build_data_model()
+    uvicorn.run(app, host="0.0.0.0", port=8000)
