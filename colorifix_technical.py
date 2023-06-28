@@ -11,10 +11,6 @@ NEO4J_PASSWORD = "password"
 
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
-# with driver.session() as session:
-#     # Delete all nodes and relationships
-#     session.run("MATCH (n) DETACH DELETE n")
-
 def is_valid_email(email):
     pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     if re.match(pattern, email):
@@ -124,8 +120,7 @@ def build_data_model():
             session.run(create_user_company_query, **relationship)
 
 
- # PART 2 Create REST API
-
+# PART 2 Create REST API
 app = FastAPI()
 
 
@@ -237,4 +232,4 @@ async def get_users(skip: int = Query(0, ge=0), limit: int = Query(10, ge=1)):
 if __name__ == "__main__":
     
     build_data_model()
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # uvicorn.run(app, host="0.0.0.0", port=8000)
