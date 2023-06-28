@@ -12,6 +12,6 @@ In order to use this API to edit the neo4J database, and because the project is 
         ```
   4. clone the repository to your local machine.
   5. Using the docker-compose.yml you should be able to right click and compose up if you are using VSCode or use the command line.
-  6. ```python localhost:8000/docs``` to access the API interface
-  7. ```python http://localhost:7474/browser/``` to access the neo4J database.
+  6. ``` localhost:8000/docs``` to access the API interface
+  7. ``` http://localhost:7474/browser/``` to access the neo4J database.
 # colorifix
