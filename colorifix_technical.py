@@ -4,6 +4,8 @@ from neo4j import GraphDatabase
 import pandas as pd
 import re
 import uvicorn
+import logging
+
 
 # PART 1 - DATA MODEL
 
@@ -39,7 +41,7 @@ import uvicorn
 # data = data_redundant_cols_removed.applymap(capitalise_words)
 # print(data)
 
-# Make the data model
+
 
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
@@ -47,10 +49,18 @@ NEO4J_PASSWORD = "password"
 
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
+
 with driver.session() as session:
     # Delete all nodes and relationships
     session.run("MATCH (n) DETACH DELETE n")
 
+
+def is_valid_email(email):
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    if re.match(pattern, email):
+        return True
+    else:
+        return False
 
 def build_data_model():
     with driver.session() as session:
@@ -160,13 +170,14 @@ build_data_model()
 # # Close the Neo4j driver
 # driver.close()
 
-# # PART 2 Create REST API
+ # PART 2 Create REST API
+
 app = FastAPI()
 
 
 @app.post("/company")
 async def add_company(company_name: str):
-    if not company_name:
+    if len(company_name) == 0:
         raise HTTPException(status_code=400, detail="No company name provided please try again.")
     with driver.session() as session:
         session.run("CREATE (:Company {name: $companyName})", companyName=company_name)
@@ -175,20 +186,28 @@ async def add_company(company_name: str):
 
 @app.post("/permission_group")
 async def add_permission_group(permission_group: str, permission: str):
-    if not permission_group:
+    if len(permission_group) == 0:
         raise HTTPException(status_code=400, detail="No permission group provided please try again.")
-    if not permission:
+    if len(permission) == 0:
         raise HTTPException(status_code=400, detail="No permission provided please try again.")
+    
     with driver.session() as session:
-        session.run("""CREATE (p:PermissionGroup {permissionGroup: $permGroup})
-                        WITH p
-                        MATCH (a:Permission {permission: $permissionName})
-                        CREATE (p)-[:HAS_PERMISSION]->(a)""", 
-                        permGroup=permission_group, 
-                        permissionName=permission
-                    )
+        check_permission_exists_query = """
+        MATCH (a:Permission {permission: $permissionName})
+        RETURN a LIMIT 1
+        """
+        valid_permission = session.run(check_permission_exists_query,permissionName=permission)
+        if not bool(valid_permission.values()):
+                raise HTTPException(status_code=400, detail="Invalid permission please try again.")
         
-    return {"message": "Permission added to Permission Group Successfully"}
+        create_new_permission_group_query = """
+        CREATE (p:PermissionGroup {permissionGroup: $permGroup})
+        WITH p
+        MATCH (a:Permission {permission: $permissionName})
+        CREATE (p)-[:HAS_PERMISSION]->(a)
+        """
+        session.run(create_new_permission_group_query, permGroup=permission_group, permissionName=permission)
+        return {"message": "New Permission Group added successfully"}
 
 @app.post("/user")
 async def add_user(user_email: str, company: str, permissionGroup:str):
@@ -198,11 +217,11 @@ async def add_user(user_email: str, company: str, permissionGroup:str):
     
     with driver.session() as session:
         company_check_query = """
-        MATCH (c:Company {companyName: $company})
+        MATCH (c:Company {companyName: $companyToCheck})
         RETURN c LIMIT 1
         """
-        valid_company = session.run(company_check_query,company=company)
-        if not bool(valid_company):
+        valid_company = session.run(company_check_query, companyToCheck=company)
+        if not valid_company.single():
             raise HTTPException(status_code=400, detail="Invalid company please try again.")
     
         permission_group_check_query = """
@@ -210,36 +229,42 @@ async def add_user(user_email: str, company: str, permissionGroup:str):
         RETURN p LIMIT 1
         """
         valid_permisison_group = session.run(permission_group_check_query, permissionGroup=permissionGroup)
-        if not bool(valid_permisison_group):
+        if not valid_permisison_group.single():
             raise HTTPException(status_code=400, detail="Invalid permission group please try again.")
         
         create_user_query = """
         CREATE (u:User {username: $user_name})
         WITH u
         MATCH (a:PermissionGroup {permissionGroup: $permissionGroupName})
-        CREATE (u)-[:IN_PERMISSION_GROUP]->(p)
+        CREATE (u)-[:IN_PERMISSION_GROUP]->(a)
         WITH u
         MATCH (c:Company {companyName: $company})
         CREATE (u)-[:WORKS_FOR]->(c)
         """
         session.run(create_user_query,user_name=user_email, permissionGroupName=permissionGroup, company=company)
 
-        return {"message": "New User created successfully"}
+        return {"message": "User created successfully"}
 
 @app.put("/user/{user_email}")
-async def update_user_permission(user_email:str, new_permission:str):
+async def update_user_permission(user_email:str, permission_group:str):
 
     with driver.session() as session:
-        result = session.run(
+        user_update_query = session.run(
             """
-            MATCH (u:User {username: $user_email})-[r:IN_PERMISSION_GROUP]->(p:PermissionGroup)
+            MATCH (u:User {username: $user_email})
+            WITH u
+            OPTIONAL MATCH (u)-[r:IN_PERMISSION_GROUP]->(p:PermissionGroup)
             DELETE r
             WITH u
-            MATCH (p_new:PermissionGroup {permissionGroup: $new_permission})
+            MATCH (p_new:PermissionGroup {permissionGroup: $permission_group})
             CREATE (u)-[:IN_PERMISSION_GROUP]->(p_new)
-            """, user_email=user_email, new_permission=new_permission
+            RETURN u
+            """, user_email=user_email, permission_group=permission_group
         )
-        return {"message": "User permission group updated successfully"}
+        if not user_update_query.single():
+            raise HTTPException(status_code=404, detail="User not found or permission update failed.")
+    
+    return {"message": "User permission updated successfully"}
 
 @app.get("/users")
 async def get_users(skip: int = Query(0, ge=0), limit: int = Query(10, ge=1)):
@@ -257,16 +282,3 @@ async def get_users(skip: int = Query(0, ge=0), limit: int = Query(10, ge=1)):
 
 # if __name__ == "__main__":
 uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-
-
-
-
-
-
-
-
-
-
-
