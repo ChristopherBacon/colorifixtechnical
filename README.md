@@ -10,6 +10,7 @@ In order to use this API to edit the neo4J database, and because the project is 
         USER = "neo4j"
         PASSWORD = "password"
         ```
+  4. Ensure that your project folder is labelled 'colorixfix_technical'
   4. clone the repository to your local machine.
   5. Using the docker-compose.yml you should be able to right click and compose up if you are using VSCode or use the command line.
   6. ``` localhost:8000/docs``` to access the API interface
@@ -35,7 +36,7 @@ There are plenty of ways to improve my project so below are a few ideas:
 5. Extend the data model to take the table as an input
 
 # Data
-I chose to sanitise the data in the data model, a nice extension would be to take the table and feed that into the data model to increase the extensibility of the project.
+I chose to sanitise the data in the data model, a nice extension would be to take the table and feed that into the data model to increase the extensibility of the project. Also, I chose to create the permissions as nodes attached to the permission group so that they could be shared or removed from other permission groups, as a pose to properties attached to permission groups.
 
 # Final Thoughts
 I really enjoyed working with these new technologies, I hope the project is satisfactory and if you have any questions or I have missed anything please do get in touch.
